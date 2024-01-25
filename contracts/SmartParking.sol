@@ -57,7 +57,7 @@ contract SmartParking {
 constructor()  {
     owner = msg.sender;
 }
-//---------------------------------------------parking info-------------------------------//
+//-------------------------------------------------------------------------------parking info-----------------------------------------------------------------------//
 
 function initializeParkingLot(uint numSpots, uint _pricePerHour) public {
     ParkingLot memory newParkingLot;
@@ -97,7 +97,7 @@ function uintToString(uint v) internal pure returns (string memory) {
 }
 
 
-//--------------------------------Auth-------------------------------------------------------//
+//--------------------------------------------------------------------------Auth------------------------------------------------------------------------------------//
     // Fonction pour le sign in d'un utilisateur
     function signIn(string memory _phoneNumber, string memory _password) public view returns (bool) {
         User storage existingUser = users[msg.sender];
@@ -140,7 +140,7 @@ function uintToString(uint v) internal pure returns (string memory) {
         // Add the user to the list of all users
         userList.push(msg.sender);
     }
-//-------------------------------vehicules-------------------------------------------//
+//------------------------------------------------------------------vehicules---------------------------------------------------------------------------------------//
     function addVehicle(string memory _brand, string memory _licensePlate) public {
         // Check if the vehicle with the given license plate already exists for the user
         for (uint i = 0; i < users[msg.sender].vehicles.length; i++) {
@@ -197,7 +197,7 @@ function uintToString(uint v) internal pure returns (string memory) {
     function getUserInfo() public view returns (User memory) {   //utile dans le test
     return users[msg.sender];
 }
-//-------------------------------------payement--------------------------------------------//
+//----------------------------------------------------------------------------------------payement-------------------------------------------------------------------//
    function getBalance() public view returns(uint){
         return users[msg.sender].balance;
     }
@@ -214,6 +214,7 @@ function uintToString(uint v) internal pure returns (string memory) {
         users[msg.sender].balance-=amount;
 emit PaymentMade(msg.sender, amount, block.timestamp);
     }
+//----------------------------------------------------------------------booking-------------------------------------------------------------------------------------//
  // Fonction pour réserver un spot de parking
     function bookParkingSpot(uint _duration, string memory _vehicleBrand, string memory _licensePlate) public payable {
         // Vérifier que le montant envoyé est suffisant pour la durée de réservation
