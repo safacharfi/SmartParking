@@ -1,15 +1,14 @@
-pragma solidity >=0.5.16 <0.9.0;
-
 contract SmartParking {
     address public owner = msg.sender;
     uint public parkingLotCount;
 
     uint public pricePerHour; // Variable d'état pour le prix par heure
 
-    struct Vehicle {
-        string brand;
+        struct Vehicle {
+        string brand;  // Ajout de la propriété `brand`
         string licensePlate;
     }
+
 
     struct User {
         string firstName;
@@ -24,6 +23,7 @@ contract SmartParking {
     struct Booking {
         address user;
         uint parkingId;
+        string spotName;
         uint payment;
         uint duration;
         uint timestamp;
@@ -38,18 +38,17 @@ contract SmartParking {
         uint availableSpotsCount;
         uint pricePerHour;
     }
-
+ mapping(string => address) private phoneToUser;  // Mapping to track used phone numbers
+    address[] public userList; 
     mapping(address => User) public users;
     mapping(address => Booking[]) public userBookings;
     mapping(address => bool) public hasSpotBooking;
     mapping(uint => ParkingLot) public parkingLots;
 
     enum ReservationState { Pending, Confirmed, Cancelled }
-        mapping(string => address) private phoneToUser;  // Mapping to track used phone numbers
-    address[] public userList;  
+    mapping(string => Booking[]) public userBookingsByLicensePlate; // Correction du type
 
-
-    event BookingCreated(address indexed user, uint indexed parkingId, uint payment, uint duration, uint timestamp);
+    event BookingCreated(address indexed user, uint indexed parkingId, string spotName, uint payment, uint duration, uint timestamp);
     event MoneyAdded(address indexed user, uint amount);
     event PaymentMade(address indexed user, uint amount, uint timestamp);
 
@@ -229,7 +228,8 @@ emit PaymentMade(msg.sender, amount, block.timestamp);
     }
 //----------------------------------------------------------------------booking-------------------------------------------------------------------------------------//
  // Fonction pour réserver un spot de parking
-   function makeBooking(uint _duration, string memory _vehicleLicensePlate) public {
+ 
+    function makeBooking(string memory _spotName, uint _duration, string memory _vehicleLicensePlate) public {
     require(_duration > 0, "Duration must be greater than zero.");
     require(parkingLots[1].availableSpotsCount > 0, "No available spots in this parking lot.");
     require(users[msg.sender].balance >= pricePerHour * _duration, "Insufficient balance.");
@@ -241,6 +241,7 @@ emit PaymentMade(msg.sender, amount, block.timestamp);
     Booking memory newBooking = Booking({
         user: msg.sender,
         parkingId: 1, // Assuming you have only one parking lot
+        spotName: _spotName,
         payment: _payment,
         duration: _duration,
         timestamp: block.timestamp,
@@ -260,8 +261,9 @@ emit PaymentMade(msg.sender, amount, block.timestamp);
     users[msg.sender].balance -= _payment;
 
     // Emit event
-    emit BookingCreated(msg.sender, 1, _payment, _duration, block.timestamp);
+    emit BookingCreated(msg.sender, 1, _spotName, _payment, _duration, block.timestamp);
 }
+
 //historique des bookings 
 function getMyBooking(string memory licensePlate) external view returns (uint[] memory timestamps, uint[] memory durations, string[] memory models, string[] memory brands) {
         Booking[] storage bookings = userBookingsByLicensePlate[licensePlate];
@@ -305,7 +307,7 @@ function getMyBooking(string memory licensePlate) external view returns (uint[] 
 
         for (uint i = 0; i < vehiclesCount; i++) {
             if (keccak256(abi.encodePacked(user.vehicles[i].licensePlate)) == keccak256(abi.encodePacked(licensePlate))) {
-                return user.vehicles[i].model;
+                return user.vehicles[i].brand;
             }
         }
 
