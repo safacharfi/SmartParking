@@ -1,19 +1,16 @@
-   // SPDX-License-Identifier: UNLICENSED
-
-
 pragma solidity >=0.5.16 <0.9.0;
 
 contract SmartParking {
-    address public owner=msg.sender;
-        uint public parkingLotCount; // Variable to keep track of the number of parkingLots
+    address public owner = msg.sender;
+    uint public parkingLotCount;
 
+    uint public pricePerHour; // Variable d'état pour le prix par heure
 
     struct Vehicle {
         string brand;
         string licensePlate;
     }
 
-   
     struct User {
         string firstName;
         string lastName;
@@ -24,59 +21,71 @@ contract SmartParking {
         bool isVehicleRegistered;
     }
 
-    mapping(string => address) private phoneToUser;  // Mapping to track used phone numbers
-    mapping(address => User) public users;
-
-    address[] public userList;  
-
     struct Booking {
         address user;
-        string vehicleBrand;
-        string licensePlate;
+        uint parkingId;
+        uint payment;
         uint duration;
-        uint startTime;
-        uint endTime;
+        uint timestamp;
+        string vehicleBrand;
+        string vehicleModel;
+        string vehicleLicensePlate;
+        ReservationState state;
     }
 
-     struct ParkingLot {
+    struct ParkingLot {
         bool[] availableSpots;
-        uint availableSpotsCount; // Number of available spots
+        uint availableSpotsCount;
         uint pricePerHour;
     }
 
+    mapping(address => User) public users;
     mapping(address => Booking[]) public userBookings;
     mapping(address => bool) public hasSpotBooking;
     mapping(uint => ParkingLot) public parkingLots;
 
-    event BookingCreated(address indexed user, uint indexed parkingId, string spotName, uint payment, uint duration, uint timestamp);
+    enum ReservationState { Pending, Confirmed, Cancelled }
+        mapping(string => address) private phoneToUser;  // Mapping to track used phone numbers
+    address[] public userList;  
+
+
+    event BookingCreated(address indexed user, uint indexed parkingId, uint payment, uint duration, uint timestamp);
     event MoneyAdded(address indexed user, uint amount);
     event PaymentMade(address indexed user, uint amount, uint timestamp);
 
-
-// Constructor
-constructor()  {
-    owner = msg.sender;
-}
+    constructor() {
+        owner = msg.sender;
+    }
 //-------------------------------------------------------------------------------parking info-----------------------------------------------------------------------//
-
-function initializeParkingLot(uint numSpots, uint _pricePerHour) public {
-    ParkingLot memory newParkingLot;
-    newParkingLot.pricePerHour = _pricePerHour;
-    newParkingLot.availableSpots = new bool[](numSpots);
-    newParkingLot.availableSpotsCount = numSpots;
-
-    for (uint i = 0; i < numSpots; i++) {
-        newParkingLot.availableSpots[i] = true;
+ function setPricePerHour(uint _price) public {
+        require(msg.sender == owner, "Only owner can set price per hour");
+        pricePerHour = _price;
     }
 
-    parkingLots[parkingLotCount] = newParkingLot; // Assign to the mapping using a key
-    parkingLotCount++;
-}
+ function initializeParkingLot(uint numSpots) public {
+        parkingLotCount++;
+        parkingLots[parkingLotCount].availableSpotsCount = numSpots;
+        parkingLots[parkingLotCount].pricePerHour = pricePerHour;
+        
+        // Initialize available spots
+        parkingLots[parkingLotCount].availableSpots = new bool[](numSpots);
+        for (uint i = 0; i < numSpots; i++) {
+            parkingLots[parkingLotCount].availableSpots[i] = true;
+        }
+    }
 
+function findAvailableSpot(ParkingLot storage _parkingLot) internal view returns (uint) {
+    for (uint i = 0; i < _parkingLot.availableSpots.length; i++) {
+        if (_parkingLot.availableSpots[i]) {
+            return i;
+        }
+    }
+    return type(uint).max;
+}
 function getAvailableSpotCount() public view returns (string memory) {
     require(parkingLotCount > 0, "No parking lot exists.");
 
-    ParkingLot storage parkingLot = parkingLots[0]; // Assuming there is only one parking lot
+    ParkingLot storage parkingLot = parkingLots[parkingLotCount]; // Access the last initialized parking lot
 
     if (parkingLot.availableSpotsCount == 0) {
         return "No available spots in this parking lot at the moment.";
@@ -84,6 +93,8 @@ function getAvailableSpotCount() public view returns (string memory) {
         return string(abi.encodePacked("Number of available spots in this parking lot: ", uintToString(parkingLot.availableSpotsCount)));
     }
 }
+
+
 
 function uintToString(uint v) internal pure returns (string memory) {
     uint w = v;
@@ -198,9 +209,11 @@ function uintToString(uint v) internal pure returns (string memory) {
     return users[msg.sender];
 }
 //----------------------------------------------------------------------------------------payement-------------------------------------------------------------------//
-   function getBalance() public view returns(uint){
+   
+  function getBalance() public view returns(uint){
         return users[msg.sender].balance;
     }
+
     //add money to cart
     function addMoney(uint amount) public payable {
     require(amount > 0, "Amount must be greater than zero");
@@ -216,49 +229,93 @@ emit PaymentMade(msg.sender, amount, block.timestamp);
     }
 //----------------------------------------------------------------------booking-------------------------------------------------------------------------------------//
  // Fonction pour réserver un spot de parking
-    function bookParkingSpot(uint _duration, string memory _vehicleBrand, string memory _licensePlate) public payable {
-        // Vérifier que le montant envoyé est suffisant pour la durée de réservation
-        uint totalPrice = parkingLots[0].pricePerHour * _duration;
-        //require(msg.value >= totalPrice, "Insufficient funds");
+   function makeBooking(uint _duration, string memory _vehicleLicensePlate) public {
+    require(_duration > 0, "Duration must be greater than zero.");
+    require(parkingLots[1].availableSpotsCount > 0, "No available spots in this parking lot.");
+    require(users[msg.sender].balance >= pricePerHour * _duration, "Insufficient balance.");
 
-        // Vérifier si le spot est disponible
-        require(parkingLots[0].availableSpotsCount > 0, "No available spots");
-        require(parkingLots[0].availableSpots[0], "Spot not available");
+    // Calculate payment
+    uint _payment = pricePerHour * _duration;
 
-        // Stocker les détails de la réservation
-        uint currentTime = block.timestamp;
-        uint endTime = currentTime + (_duration * 1 hours); // Calculer l'heure de fin
+    // Create new booking
+    Booking memory newBooking = Booking({
+        user: msg.sender,
+        parkingId: 1, // Assuming you have only one parking lot
+        payment: _payment,
+        duration: _duration,
+        timestamp: block.timestamp,
+        vehicleBrand: users[msg.sender].vehicles[0].brand, // Assuming user has only one vehicle
+        vehicleModel: "", // You may add this information if needed
+        vehicleLicensePlate: _vehicleLicensePlate,
+        state: ReservationState.Pending
+    });
 
-        Booking memory newBooking = Booking({
-            user: msg.sender,
-            vehicleBrand: _vehicleBrand,
-            licensePlate: _licensePlate,
-            duration: _duration,
-            startTime: currentTime,
-            endTime: endTime
-        });
+    // Update available spots count
+    parkingLots[1].availableSpotsCount--;
 
-        userBookings[msg.sender].push(newBooking);
-        hasSpotBooking[msg.sender] = true;
+    // Add booking to user's bookings
+    userBookings[msg.sender].push(newBooking);
 
-        // Mettre à jour l'état du spot de parking
-        parkingLots[0].availableSpots[0] = false;
-        parkingLots[0].availableSpotsCount--;
+    // Deduct payment from user's balance
+    users[msg.sender].balance -= _payment;
 
-        emit BookingCreated(msg.sender, 0, "SpotName", totalPrice, _duration, currentTime);
-    }
+    // Emit event
+    emit BookingCreated(msg.sender, 1, _payment, _duration, block.timestamp);
+}
+//historique des bookings 
+function getMyBooking(string memory licensePlate) external view returns (uint[] memory timestamps, uint[] memory durations, string[] memory models, string[] memory brands) {
+        Booking[] storage bookings = userBookingsByLicensePlate[licensePlate];
 
-function findAvailableSpot(ParkingLot storage _parkingLot) internal view returns (uint) {
-    for (uint i = 0; i < _parkingLot.availableSpots.length; i++) {
-        if (_parkingLot.availableSpots[i]) {
-            return i;
+        uint length = bookings.length;
+
+        timestamps = new uint[](length);
+        durations = new uint[](length);
+        models = new string[](length);
+        brands = new string[](length);
+
+        for (uint i = 0; i < length; i++) {
+            timestamps[i] = bookings[i].timestamp;
+            durations[i] = bookings[i].duration;
+            brands[i] = getVehicleBrandByLicensePlate(licensePlate);
+            models[i] = getVehicleModelByLicensePlate(licensePlate);
         }
+
+        return (timestamps, durations, models, brands);
     }
-    return type(uint).max;
-}
-//historique ....
+
+    function getVehicleBrandByLicensePlate(string memory licensePlate) internal view returns (string memory) {
+        // Recherchez le véhicule correspondant dans la liste des véhicules de l'utilisateur
+        User storage user = users[msg.sender];
+        uint vehiclesCount = user.vehicles.length;
+
+        for (uint i = 0; i < vehiclesCount; i++) {
+            if (keccak256(abi.encodePacked(user.vehicles[i].licensePlate)) == keccak256(abi.encodePacked(licensePlate))) {
+                return user.vehicles[i].brand;
+            }
+        }
+
+        // Si la plaque d'immatriculation n'est pas trouvée, retournez une chaîne vide
+        return "";
+    }
+
+    function getVehicleModelByLicensePlate(string memory licensePlate) internal view returns (string memory) {
+        // Recherchez le véhicule correspondant dans la liste des véhicules de l'utilisateur
+        User storage user = users[msg.sender];
+        uint vehiclesCount = user.vehicles.length;
+
+        for (uint i = 0; i < vehiclesCount; i++) {
+            if (keccak256(abi.encodePacked(user.vehicles[i].licensePlate)) == keccak256(abi.encodePacked(licensePlate))) {
+                return user.vehicles[i].model;
+            }
+        }
+
+        // Si la plaque d'immatriculation n'est pas trouvée, retournez une chaîne vide
+        return "";
+    }
 
 }
+
+
 
 
 
